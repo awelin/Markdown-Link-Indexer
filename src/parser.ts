@@ -14,6 +14,8 @@ export function extractMarkdownLinks(text: string, baseDir: string): string[] {
     if (token.type === 'link_open' || token.type === 'image') {
       let href = token.attrGet('href') || token.attrGet('src');
       if (href) {
+        // Strip optional angle brackets around URL
+        href = href.replace(/^<(.+)>$/, '$1');
         if (isUrlLink(href)) {
           console.info(`🌐 URL link skipped: ${href}`);
           urlCount++;
@@ -289,4 +291,65 @@ export function calculateRelativePath(fromFile: string, toFile: string): string 
   const relativePath = path.relative(fromDir, toFile);
   // Normalize path separators for markdown (forward slashes)
   return relativePath.replace(/\\/g, '/');
+}
+
+export function updateMarkdownLinks(text: string, oldDir: string, newDir: string): string {
+  if (oldDir === newDir) return text;
+
+  const dummyFile = path.join(newDir, 'dummy.md'); // used for relative calculation
+
+  // Function to check if link is relative (not absolute, not URL, etc.)
+  const isRelativeLink = (link: string): boolean => {
+    return !path.isAbsolute(link) &&
+           !link.startsWith('http://') &&
+           !link.startsWith('https://') &&
+           !link.startsWith('#') &&
+           !link.startsWith('mailto:') &&
+           !link.startsWith('javascript:');
+  };
+
+  const updateInlineLinks = (regex: RegExp) => {
+    text = text.replace(regex, (match, alt, openingBrace, link, closingBrace) => {
+      if (isRelativeLink(link)) {
+        const target = normalizeLink(link, oldDir);
+        let newLink = calculateRelativePath(dummyFile, target);
+        // Wrap in angle brackets if the new path contains spaces (for safety)
+        if (newLink.includes(' ')) {
+          newLink = `<${newLink}>`;
+        }
+        const linkPart = `${openingBrace || ''}${link}${closingBrace || ''}`;
+        const newLinkPart = newLink;
+        return match.replace(linkPart, newLinkPart);
+      }
+      return match;
+    });
+  };
+
+  // Update regular inline links - handle optional angle brackets around links
+  updateInlineLinks(/\[([^\]]*)\]\((<)?([^>)]+)(>)?\)/g);
+  // Update image links - handle optional angle brackets around links
+  updateInlineLinks(/!\[([^\]]*)\]\((<)?([^>)]+)(>)?\)/g);
+
+  return text;
+}
+
+export function updateNotebookLinks(content: string, oldDir: string, newDir: string): string {
+  if (oldDir === newDir) return content;
+
+  try {
+    const data = JSON.parse(content);
+    for (const cell of data.cells || []) {
+      if (cell.cell_type === 'markdown' && cell.source) {
+        // Update each line individually to preserve line structure and newlines
+        const newSource = cell.source.map((line: string) => updateMarkdownLinks(line, oldDir, newDir));
+        if (newSource.some((line: string, i: number) => line !== cell.source[i])) {
+          cell.source = newSource;
+        }
+      }
+    }
+    return JSON.stringify(data, null, 1); // pretty print to match original format
+  } catch (error) {
+    console.error('Error updating notebook links:', error);
+    return content; // return unchanged if parsing fails
+  }
 }
