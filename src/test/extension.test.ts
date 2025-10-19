@@ -9,7 +9,9 @@ import {
   extractLinksFromNotebook,
   isLinkBroken,
   findSmartReplacementCandidates,
-  calculateRelativePath
+  calculateRelativePath,
+  updateMarkdownLinks,
+  updateNotebookLinks
 } from '../parser';
 import { Registry } from '../registry';
 
@@ -352,6 +354,197 @@ suite('Extension Test Suite', () => {
 		];
 		expectedLinks.forEach(expected => {
 			assert.ok(links.includes(expected), `Missing expected link: ${expected}`);
+		});
+	});
+
+	suite('Internal Link Update Tests', () => {
+		test('updateMarkdownLinks updates relative links when moving to different directory', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = '[link](./file.md) [sibling](sibling.md)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[link](../docs/file.md) [sibling](../docs/sibling.md)');
+		});
+
+		test('updateMarkdownLinks updates image links the same way', () => {
+			const oldDir = '/workspace/src';
+			const newDir = '/workspace/dist';
+			const input = '![logo](../assets/logo.png) ![icon](./icon.png)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '![logo](../assets/logo.png) ![icon](../src/icon.png)');
+		});
+
+		test('updateMarkdownLinks leaves absolute links unchanged', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = '[absolute](/root/file.md) [another](/other.md)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[absolute](/root/file.md) [another](/other.md)');
+		});
+
+		test('updateMarkdownLinks leaves URLs and protocols unchanged', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = '[url](https://example.com) [mailto](mailto:test@example.com) [anchor](#section)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[url](https://example.com) [mailto](mailto:test@example.com) [anchor](#section)');
+		});
+
+		test('updateMarkdownLinks handles no directory change', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/docs';
+			const input = '[link](./file.md) ![img](image.png)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, input); // Should return unchanged
+		});
+
+		test('updateMarkdownLinks handles complex relative paths', () => {
+			const oldDir = '/workspace/deep/nested/folder';
+			const newDir = '/workspace/top';
+			const input = '[complex](../../../other/deep/file.md) [simple](./local.md)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[complex](../other/deep/file.md) [simple](../deep/nested/folder/local.md)');
+		});
+
+		test('updateMarkdownLinks handles multiple links in same document', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = `
+# Documentation
+
+Link to [api](./api.md) and [guide](./guide.md).
+Also [external](https://example.com) which stays the same.
+
+![diagram](./diagram.png)
+			`.trim();
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.ok(result.includes('[api](../docs/api.md)'));
+			assert.ok(result.includes('[guide](../docs/guide.md)'));
+			assert.ok(result.includes('[external](https://example.com)'));
+			assert.ok(result.includes('![diagram](../docs/diagram.png)'));
+		});
+
+		test('updateMarkdownLinks preserves text around links', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = 'Start [link](./file.md) end';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, 'Start [link](../docs/file.md) end');
+		});
+
+		test('updateNotebookLinks updates links in markdown cells', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const notebookContent = JSON.stringify({
+				cells: [
+					{
+						cell_type: 'markdown',
+						source: ['# Title\n[link](./file.md) here']
+					},
+					{
+						cell_type: 'code',
+						source: ['print("code")']
+					}
+				]
+			});
+			const result = updateNotebookLinks(notebookContent, oldDir, newDir);
+			const parsed = JSON.parse(result);
+			assert.strictEqual(parsed.cells[0].source.join(''), '# Title\n[link](../docs/file.md) here');
+			assert.deepStrictEqual(parsed.cells[1].source, ['print("code")']); // Code unchanged
+		});
+
+		test('updateNotebookLinks handles multiple cells with links', () => {
+			const oldDir = '/workspace/src';
+			const newDir = '/workspace/dist';
+			const notebookContent = JSON.stringify({
+				cells: [
+					{
+						cell_type: 'markdown',
+						source: ['[cell1](./file1.md)']
+					},
+					{
+						cell_type: 'markdown',
+						source: ['[cell2](./file2.md)', '![img](image.png)']
+					}
+				]
+			});
+			const result = updateNotebookLinks(notebookContent, oldDir, newDir);
+			const parsed = JSON.parse(result);
+			assert.ok(parsed.cells[0].source.join('').includes('[cell1](../src/file1.md)'));
+			assert.ok(parsed.cells[1].source.join('').includes('[cell2](../src/file2.md)'));
+			assert.ok(parsed.cells[1].source.join('').includes('![img](../src/image.png)'));
+		});
+
+		test('updateNotebookLinks preserves notebook structure', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const notebookContent = JSON.stringify({
+				notebook_metadata: { version: '1.0' },
+				cells: [
+					{
+						cell_type: 'markdown',
+						source: ['[link](./file.md)']
+					}
+				]
+			});
+			const result = updateNotebookLinks(notebookContent, oldDir, newDir);
+			const parsed = JSON.parse(result);
+			assert.strictEqual(parsed.notebook_metadata.version, '1.0');
+			assert.strictEqual(parsed.cells.length, 1);
+			assert.ok(parsed.cells[0].source.join('').includes('[link](../docs/file.md)'));
+		});
+
+		test('updateNotebookLinks handles no directory change', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/docs';
+			const notebookContent = JSON.stringify({
+				cells: [{
+					cell_type: 'markdown',
+					source: ['[link](./file.md)']
+				}]
+			});
+			const result = updateNotebookLinks(notebookContent, oldDir, newDir);
+			assert.strictEqual(result, notebookContent); // Should return unchanged
+		});
+
+		test('updateNotebookLinks graceful error handling for malformed JSON', () => {
+			const badJson = '{"cells": [{"cell_type": "markdown", "source": ["broken"';
+			const result = updateNotebookLinks(badJson, '/old', '/new');
+			assert.strictEqual(result, badJson); // Should return unchanged
+		});
+
+		test('updateMarkdownLinks handles URL-encoded paths', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = '[encoded](./folder%20with%20spaces/file.md)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[encoded](<../docs/folder with spaces/file.md>)');
+		});
+
+		test('updateMarkdownLinks handles links that become absolute-like', () => {
+			const oldDir = '/workspace/docs/sub';
+			const newDir = '/workspace/archive';
+			// Link to parent directory that becomes root relative
+			const input = '[parent](../../../root/file.md)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			// From /workspace/archive to /workspace/root/file.md = ../../root/file.md
+			assert.strictEqual(result, '[parent](../../root/file.md)');
+		});
+
+		test('updateMarkdownLinks preserves angle brackets around links', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/archive';
+			const input = '[link](<./file.md>) ![img](<../assets/logo.png>)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[link](../docs/file.md) ![img](../assets/logo.png)');
+		});
+
+		test('updateMarkdownLinks adds angle brackets when path contains spaces', () => {
+			const oldDir = '/workspace/docs';
+			const newDir = '/workspace/folder with spaces';
+			const input = '[link](file with spaces.md)';
+			const result = updateMarkdownLinks(input, oldDir, newDir);
+			assert.strictEqual(result, '[link](<../docs/file with spaces.md>)');
 		});
 	});
 });
