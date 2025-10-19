@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { extractMarkdownLinks, extractLinksFromNotebook, findBrokenLinks, findReplacementCandidates, findSmartReplacementCandidates, calculateRelativePath, BrokenLinkInfo } from './parser';
+import { extractMarkdownLinks, extractLinksFromNotebook, findBrokenLinks, findReplacementCandidates, findSmartReplacementCandidates, calculateRelativePath, updateMarkdownLinks, updateNotebookLinks, BrokenLinkInfo } from './parser';
 import { Registry } from './registry';
 
 interface CandidateQuickPickItem extends vscode.QuickPickItem {
@@ -82,6 +82,8 @@ export function activate(context: vscode.ExtensionContext) {
     for (const file of e.files) {
       console.log(`Renamed: ${file.oldUri.fsPath} -> ${file.newUri.fsPath}`);
       await updateReferences(file.oldUri.fsPath, file.newUri.fsPath);
+      // Update links inside the moved file itself
+      await updateInternalLinks(file.oldUri, file.newUri);
       registry!.remove(file.oldUri);
       const links = await parseFile(file.newUri);
       registry!.update(file.newUri, links);
@@ -179,6 +181,42 @@ async function updateReferences(oldPath: string, newPath: string) {
     } catch (e) {
       console.error(`Error updating ${fileUri.fsPath}:`, e);
     }
+  }
+}
+
+async function updateInternalLinks(oldUri: vscode.Uri, newUri: vscode.Uri) {
+  if (!newUri.fsPath.endsWith('.md') && !newUri.fsPath.endsWith('.ipynb')) {
+    return; // only process markdown and notebook files
+  }
+
+  const oldDir = path.dirname(oldUri.fsPath);
+  const newDir = path.dirname(newUri.fsPath);
+
+  if (oldDir === newDir) {
+    console.log(`No directory change for ${newUri.fsPath}, skipping internal link updates`);
+    return;
+  }
+
+  try {
+    console.log(`Updating internal links in ${newUri.fsPath}`);
+    const content = await vscode.workspace.fs.readFile(newUri);
+    const text = content.toString();
+
+    let newText: string;
+    if (newUri.fsPath.endsWith('.md')) {
+      newText = updateMarkdownLinks(text, oldDir, newDir);
+    } else {
+      newText = updateNotebookLinks(text, oldDir, newDir);
+    }
+
+    if (newText !== text) {
+      await vscode.workspace.fs.writeFile(newUri, Buffer.from(newText));
+      console.log(`Updated internal links in ${newUri.fsPath}: ${oldDir} -> ${newDir}`);
+    } else {
+      console.log(`No links updated in ${newUri.fsPath}`);
+    }
+  } catch (error) {
+    console.error(`Error updating internal links in ${newUri.fsPath}:`, error);
   }
 }
 
