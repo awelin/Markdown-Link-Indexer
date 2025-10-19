@@ -1,0 +1,73 @@
+{
+  "name": "markdown-link-indexer",
+  "displayName": "Markdown Link Indexer",
+  "description": "Automatically collects and indexes all Markdown and Notebook links in your workspace.",
+  "version": "0.1.0",
+  "publisher": "ZelinYang21",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "links",
+    "indexing",
+    "notebook",
+    "jupyter",
+    "references",
+    "maintenance",
+    "refactoring"
+  ],
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awelin/markdown-link-indexer"
+  },
+  "activationEvents": [
+    "onLanguage:markdown",
+    "onCommand:markdownLinkIndexer.exportLinks",
+    "onFileSystem:ipynb"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markdownLinkIndexer.exportLinks",
+        "title": "Export All Markdown Links"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "linkExplorer",
+          "name": "Markdown Links"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "dependencies": {
+    "markdown-it": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.105.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.3",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
