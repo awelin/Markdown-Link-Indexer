@@ -37,6 +37,11 @@
       {
         "command": "markdownLinkIndexer.exportLinks",
         "title": "Export All Markdown Links"
+      },
+      {
+        "command": "markdownLinkIndexer.fixBrokenLinks",
+        "title": "Fix Broken Links",
+        "category": "Markdown Link Indexer"
       }
     ],
     "views": {
